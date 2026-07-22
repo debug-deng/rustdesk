@@ -145,6 +145,7 @@ void runMainApp(bool startService) async {
   }
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
+  gFFI.userModel.startAutoReloginWatchdog();
   runApp(App());
 
   bool? alwaysOnTop;
@@ -185,6 +186,7 @@ void runMobileApp() async {
   draggablePositions.load();
   await Future.wait([gFFI.abModel.loadCache(), gFFI.groupModel.loadCache()]);
   gFFI.userModel.refreshCurrentUser();
+  gFFI.userModel.startAutoReloginWatchdog();
   runApp(App());
   await initUniLinks();
 }

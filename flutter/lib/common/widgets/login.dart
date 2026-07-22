@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common/hbbs/hbbs.dart';
+import 'package:flutter_hbb/common/hbbs/secure_credentials.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
 import 'package:get/get.dart';
@@ -434,6 +435,18 @@ Future<bool?> loginDialog() async {
                   key: 'access_token', value: resp.access_token!);
               await bind.mainSetLocalOption(
                   key: 'user_info', value: jsonEncode(resp.user ?? {}));
+              // 密码登录成功路径:加密保存凭据,用于 token 失效时自动重登
+              try {
+                if (username.text.isNotEmpty && password.text.isNotEmpty) {
+                  final api = await bind.mainGetApiServer();
+                  await SecureCredentials.save(
+                      username.text, password.text, api);
+                  await bind.mainSetLocalOption(
+                      key: 'auto_relogin_enabled', value: 'Y');
+                }
+              } catch (e) {
+                debugPrint('Save secure credentials failed: $e');
+              }
             }
             if (close != null) {
               close(true);

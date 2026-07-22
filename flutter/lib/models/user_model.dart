@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:bot_toast/bot_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common/hbbs/hbbs.dart';
+import 'package:flutter_hbb/common/hbbs/secure_credentials.dart';
 import 'package:flutter_hbb/models/ab_model.dart';
 import 'package:get/get.dart';
 
@@ -15,6 +16,7 @@ import 'platform_model.dart';
 bool refreshingUser = false;
 
 class UserModel {
+  bool _autoReloginInFlight = false;
   final RxString userName = ''.obs;
   final RxBool isAdmin = false.obs;
   final RxString networkError = ''.obs;
@@ -36,6 +38,8 @@ class UserModel {
     networkError.value = '';
     final token = bind.mainGetLocalOption(key: 'access_token');
     if (token == '') {
+      // 启动时无 token:尝试用已保存的凭据自动重登
+      await _tryAutoRelogin();
       await updateOtherModels();
       return;
     }
@@ -63,7 +67,9 @@ class UserModel {
       refreshingUser = false;
       final status = response.statusCode;
       if (status == 401 || status == 400) {
-        reset(resetOther: status == 401);
+        // 关键改动：检测到 token 失效，不再直接 reset 弹回登录页
+        // 而是有存凭据就静默重登；没存才走老逻辑
+        await _tryAutoRelogin();
         return;
       }
       final data = json.decode(decode_http_response(response));
@@ -105,11 +111,68 @@ class UserModel {
   Future<void> reset({bool resetOther = false}) async {
     await bind.mainSetLocalOption(key: 'access_token', value: '');
     await bind.mainSetLocalOption(key: 'user_info', value: '');
+    // 不在这里清 SecureCredentials:登出时由 logOut 显式清,
+    // 避免临时网络抖动导致密码丢失。
     if (resetOther) {
       await gFFI.abModel.reset();
       await gFFI.groupModel.reset();
     }
     userName.value = '';
+  }
+
+  /// 检测到 access_token 失效时调用。
+  /// 有存凭据就静默自动重登；没有则保持原行为 reset() 弹登录。
+  Future<void> _tryAutoRelogin() async {
+    if (_autoReloginInFlight) return; // 防止重入风暴
+    final cred = await SecureCredentials.load();
+    if (cred == null) {
+      // 老用户,没启过自动重登,保持原行为
+      await reset(resetOther: true);
+      return;
+    }
+    _autoReloginInFlight = true;
+    try {
+      final req = LoginRequest(
+        username: cred.user,
+        password: cred.pass,
+        id: await bind.mainGetMyId(),
+        uuid: await bind.mainGetUuid(),
+        autoLogin: true,
+        type: HttpType.kAuthReqTypeAccount,
+      );
+      final resp = await login(req);
+      if (resp.access_token != null) {
+        await bind.mainSetLocalOption(
+            key: 'access_token', value: resp.access_token!);
+        await bind.mainSetLocalOption(
+            key: 'user_info', value: jsonEncode(resp.user ?? {}));
+        debugPrint('Auto re-login success: ${cred.user}');
+        // 重新拉一次 user info 同步
+        await refreshCurrentUser();
+      } else {
+        // 服务端返回但没 token(可能需要 2FA / 邮件验证),降级让用户手登
+        await reset(resetOther: true);
+        // 密码已对不上,清掉避免每次都失败
+        await SecureCredentials.clear();
+      }
+    } catch (e) {
+      debugPrint('Auto re-login failed: $e');
+      // 网络问题别急着 reset,等下次 watchdog 触发
+    } finally {
+      _autoReloginInFlight = false;
+    }
+  }
+
+  /// 启动后台 watchdog:定时检查 token 有效性,失效时尝试自动重登
+  void startAutoReloginWatchdog() {
+    Timer.periodic(const Duration(minutes: 5), (_) {
+      if (!isLogin) {
+        // 还没登过,先尝试自动重登(冷启动场景:系统重启/手动启动)
+        _tryAutoRelogin();
+      } else {
+        refreshCurrentUser();
+      }
+    });
   }
 
   _parseAndUpdateUser(UserPayload user) {
@@ -147,6 +210,8 @@ class UserModel {
     } catch (e) {
       debugPrint("request /api/logout failed: err=$e");
     } finally {
+      // 显式清掉自动重登凭据:用户主动登出 = 不再自动重登
+      await SecureCredentials.clear();
       await reset(resetOther: true);
       gFFI.dialogManager.dismissByTag(tag);
     }

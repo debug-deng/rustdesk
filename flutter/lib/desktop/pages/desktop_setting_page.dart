@@ -2257,6 +2257,12 @@ class _AboutState extends State<_About> {
                             style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 color: Colors.white),
+                          ),
+                          Text(
+                            translate('Slogan_self_build'),
+                            style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white70),
                           )
                         ],
                       ),

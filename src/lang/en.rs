@@ -7,6 +7,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("ID/Relay Server", "ID/Relay server"),
         ("id_change_tip", "Only a-z, A-Z, 0-9, - (dash) and _ (underscore) characters allowed. The first letter must be a-z, A-Z. Length between 6 and 16."),
         ("Slogan_tip", "Made with heart in this chaotic world!"),
+        ("Slogan_self_build", "Self-built, for personal use"),
         ("Build Date", "Build date"),
         ("Audio Input", "Audio input"),
         ("Hardware Codec", "Hardware codec"),

@@ -45,6 +45,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Website", "网站"),
         ("About", "关于"),
         ("Slogan_tip", "在这个混乱的世界中，用心制作！"),
+        ("Slogan_self_build", "自编译自用版本"),
         ("Privacy Statement", "隐私声明"),
         ("Mute", "静音"),
         ("Build Date", "构建日期"),
