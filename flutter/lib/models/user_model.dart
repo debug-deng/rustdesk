@@ -16,6 +16,8 @@ import 'platform_model.dart';
 bool refreshingUser = false;
 
 class UserModel {
+  // Guards against re-entrancy storms when both the periodic watchdog and an
+  // HTTP 401 race each other into _tryAutoRelogin().
   bool _autoReloginInFlight = false;
   final RxString userName = ''.obs;
   final RxBool isAdmin = false.obs;

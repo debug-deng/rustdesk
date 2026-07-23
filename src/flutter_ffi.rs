@@ -1129,6 +1129,66 @@ pub fn main_set_local_option(key: String, value: String) {
     }
 }
 
+// Storage keys for the auto re-login credentials. Kept private because callers
+// should go through the dedicated `main_*_relogin_credentials` FFI helpers
+// below — they handle encryption transparently with
+// `hbb_common::password_security::encrypt_str_or_original`.
+const RELOGIN_KEY_USER: &str = "relogin_user";
+const RELOGIN_KEY_PASS: &str = "relogin_pass";
+const RELOGIN_KEY_API: &str = "relogin_api";
+// Bump when the on-disk encryption format changes so old ciphertexts get
+// transparently re-encrypted under the new scheme.
+const RELOGIN_CRYPT_VERSION: &str = "00";
+const RELOGIN_MAX_LEN: usize = 512;
+
+// Encrypts and persists the credentials used to silently re-authenticate when
+// the access_token expires. The password is encrypted at rest using
+// sodiumoxide secretbox keyed off the machine UUID (same scheme as
+// `permanent_password`).
+pub fn main_save_relogin_credentials(user: String, pass: String, api: String) {
+    use hbb_common::password_security;
+    set_local_option(
+        RELOGIN_KEY_USER.to_string(),
+        password_security::encrypt_str_or_original(&user, RELOGIN_CRYPT_VERSION, RELOGIN_MAX_LEN),
+    );
+    set_local_option(
+        RELOGIN_KEY_PASS.to_string(),
+        password_security::encrypt_str_or_original(&pass, RELOGIN_CRYPT_VERSION, RELOGIN_MAX_LEN),
+    );
+    set_local_option(
+        RELOGIN_KEY_API.to_string(),
+        password_security::encrypt_str_or_original(&api, RELOGIN_CRYPT_VERSION, RELOGIN_MAX_LEN),
+    );
+}
+
+// Decrypts and returns the stored [user, pass, api] triple. Any field that is
+// missing or fails to decrypt comes back as an empty string — callers should
+// treat that as "no saved credentials" rather than as an error so transient
+// corruptions don't break login.
+pub fn main_load_relogin_credentials() -> SyncReturn<Vec<String>> {
+    use hbb_common::password_security;
+    let raw_user = get_local_option(RELOGIN_KEY_USER.to_string());
+    let raw_pass = get_local_option(RELOGIN_KEY_PASS.to_string());
+    let raw_api = get_local_option(RELOGIN_KEY_API.to_string());
+    let (user, _, _) =
+        password_security::decrypt_str_or_original(&raw_user, RELOGIN_CRYPT_VERSION);
+    let (pass, _, _) =
+        password_security::decrypt_str_or_original(&raw_pass, RELOGIN_CRYPT_VERSION);
+    let (api, _, _) =
+        password_security::decrypt_str_or_original(&raw_api, RELOGIN_CRYPT_VERSION);
+    SyncReturn(vec![user, pass, api])
+}
+
+pub fn main_clear_relogin_credentials() {
+    set_local_option(RELOGIN_KEY_USER.to_string(), "".to_owned());
+    set_local_option(RELOGIN_KEY_PASS.to_string(), "".to_owned());
+    set_local_option(RELOGIN_KEY_API.to_string(), "".to_owned());
+}
+
+pub fn main_has_relogin_credentials() -> SyncReturn<bool> {
+    SyncReturn(!get_local_option(RELOGIN_KEY_USER.to_string()).is_empty())
+}
+
 // We do use use `main_get_local_option` and `main_set_local_option`.
 //
 // 1. For get, the value is stored in the server process.
